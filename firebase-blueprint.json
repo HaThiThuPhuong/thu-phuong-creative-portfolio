@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "User Profile",
+      "description": "Main profile information for the portfolio",
+      "type": "object",
+      "properties": {
+        "full_name": { "type": "string" },
+        "job_title_model": { "type": "string" },
+        "job_title_ba": { "type": "string" },
+        "banner_title_model": { "type": "string" },
+        "banner_subtitle_model": { "type": "string" },
+        "banner_title_ba": { "type": "string" },
+        "banner_subtitle_ba": { "type": "string" },
+        "bio": { "type": "string" },
+        "avatar_url": { "type": "string" },
+        "fb_link": { "type": "string" },
+        "ig_link": { "type": "string" },
+        "zalo_link": { "type": "string" },
+        "linkedin_link": { "type": "string" },
+        "height": { "type": "number" },
+        "weight": { "type": "number" },
+        "bust": { "type": "number" },
+        "waist": { "type": "number" },
+        "hips": { "type": "number" },
+        "birth_date": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "university": { "type": "string" },
+        "gpa": { "type": "string" },
+        "subjects": { "type": "string", "description": "JSON array string" },
+        "career_goal": { "type": "string" },
+        "current_location": { "type": "string" }
+      }
+    },
+    "Asset": {
+      "title": "Visual Asset",
+      "description": "Images and concept data for model and BA portfolios",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "url": { "type": "string" },
+        "urls": { "type": "string", "description": "JSON array string of URLs" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "photographer": { "type": "string" },
+        "makeup": { "type": "string" },
+        "location": { "type": "string" },
+        "grid_class": { "type": "string" },
+        "concept_vibe": { "type": "string" },
+        "facebook_post_url": { "type": "string" },
+        "description": { "type": "string" },
+        "metadata": { "type": "string", "description": "JSON object string" }
+      }
+    },
+    "CalendarSlot": {
+      "title": "Calendar Slot",
+      "description": "Availability status for a specific date",
+      "type": "object",
+      "properties": {
+        "date_str": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "Service": {
+      "title": "Service or Expertise",
+      "description": "Professional services offered in Model or BA mode",
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "icon_name": { "type": "string" },
+        "benefits": { "type": "string", "description": "JSON array string" },
+        "stat_label": { "type": "string" },
+        "stat_value": { "type": "string" },
+        "image_url": { "type": "string" }
+      }
+    },
+    "Milestone": {
+      "title": "Career Milestone",
+      "description": "Professional history markers",
+      "type": "object",
+      "properties": {
+        "year": { "type": "number" },
+        "period": { "type": "string" },
+        "role": { "type": "string" },
+        "company": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "description": { "type": "string" },
+        "projects": { "type": "string", "description": "JSON array string" }
+      }
+    },
+    "BAProject": {
+      "title": "BA Project",
+      "description": "Detailed project entry for BA portfolio",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "role": { "type": "string" },
+        "description": { "type": "string" },
+        "images": { "type": "string", "description": "JSON array string" },
+        "flowchart_url": { "type": "string" },
+        "github_url": { "type": "string" },
+        "tags": { "type": "string", "description": "JSON array string" },
+        "grid_class": { "type": "string" }
+      }
+    },
+    "LifeHobby": {
+      "title": "Life & Hobby",
+      "description": "Memories and personal interests",
+      "type": "object",
+      "properties": {
+        "image_url": { "type": "string" },
+        "title": { "type": "string" },
+        "thought": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "profile": {
+      "schema": "Profile",
+      "description": "Single document profile (ID: 'main')"
+    },
+    "assets": {
+      "schema": "Asset",
+      "description": "Collection of visual assets"
+    },
+    "calendar": {
+      "schema": "CalendarSlot",
+      "description": "Collection of calendar slots"
+    },
+    "services": {
+      "schema": "Service",
+      "description": "Collection of professional services"
+    },
+    "milestones": {
+      "schema": "Milestone",
+      "description": "Collection of career milestones"
+    },
+    "ba_projects": {
+      "schema": "BAProject",
+      "description": "Collection of business analysis projects"
+    },
+    "life_hobbies": {
+      "schema": "LifeHobby",
+      "description": "Collection of personal memories"
+    }
+  }
+}

@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'thuphuong342005@gmail.com' && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Profile Rules
+    match /profile/{profileId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Assets Rules
+    match /assets/{assetId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Calendar Rules
+    match /calendar/{slotId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Services Rules
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Milestones Rules
+    match /milestones/{milestoneId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // BA Projects Rules
+    match /ba_projects/{projectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Life Hobbies Rules
+    match /life_hobbies/{hobbyId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
