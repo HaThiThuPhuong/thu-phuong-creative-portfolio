@@ -2,23 +2,35 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { ModeToggle } from './ModeToggle';
 import { useTheme } from '../context/ThemeContext';
-import { loginWithGoogle, logout } from '../lib/firebase';
+import { logout, setLocalUser } from '../lib/firebase';
 import { LogIn, LogOut, User as UserIcon } from 'lucide-react';
+import { LoginModal } from './LoginModal';
 
 import { BrandLogo } from './BrandLogo';
 
 export const Navigation = () => {
   const { isModelMode, user, isAdmin } = useTheme();
+  const [isLoginModalOpen, setIsLoginModalOpen] = React.useState(false);
 
   return (
-    <nav className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-6xl px-4 pointer-events-none">
+    <>
+      <nav className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-6xl px-4 pointer-events-none">
       <div className="bg-white/20 backdrop-blur-xl px-4 md:px-8 h-[70px] rounded-[30px] flex items-center justify-between border border-white/30 shadow-2xl pointer-events-auto">
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="flex items-center flex-shrink-0"
+          className="flex items-center gap-3 overflow-visible"
         >
           <BrandLogo hideStroke={true} className="text-[var(--accent)] scale-[1.3] md:scale-[1.5] -translate-y-2 translate-x-2" />
+          {!isModelMode && (
+            <motion.span 
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="px-3 py-1 bg-[#0d4f45] text-white text-[9px] font-bold uppercase tracking-widest rounded-full ml-6 hidden sm:block"
+            >
+              Business Analyst
+            </motion.span>
+          )}
         </motion.div>
 
         <div className="hidden lg:flex gap-3 xl:gap-5 items-center text-[9px] xl:text-[10px] font-bold uppercase tracking-[0.1em] xl:tracking-[0.15em] opacity-60">
@@ -33,11 +45,11 @@ export const Navigation = () => {
             </>
           ) : (
             <>
-              <a href="#professional-overview" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">About BA</a>
+              <a href="#about" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">About BA</a>
               <a href="#experience" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">Experience</a>
               <a href="#projects" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">Projects</a>
-              <a href="#ba-services" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">Expertise</a>
-              <a href="#ba-memories" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">Life & Hobbies</a>
+              <a href="#expertise" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">Expertise</a>
+              <a href="#life-hobbies" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap">Life & Hobbies</a>
             </>
           )}
           <a href="https://zalo.me/0325706636" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--accent)] transition-colors whitespace-nowrap border-l border-white/10 pl-4 xl:pl-8">Contact</a>
@@ -63,7 +75,7 @@ export const Navigation = () => {
               </div>
             ) : (
               <button 
-                onClick={() => loginWithGoogle()}
+                onClick={() => setIsLoginModalOpen(true)}
                 className="text-white/40 hover:text-white transition-colors flex items-center gap-2 text-[10px] uppercase font-bold tracking-widest"
                 title="Login to edit"
               >
@@ -75,6 +87,12 @@ export const Navigation = () => {
           <ModeToggle />
         </div>
       </div>
+      <LoginModal 
+        isOpen={isLoginModalOpen} 
+        onClose={() => setIsLoginModalOpen(false)} 
+        onSuccess={(user) => setLocalUser(user)}
+      />
     </nav>
+    </>
   );
 };

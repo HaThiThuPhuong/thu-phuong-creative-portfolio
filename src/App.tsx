@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { onAuthStateChanged, auth } from './lib/firebase';
+import { fetchProfile } from './services/api';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { CanvasBackground } from './components/CanvasBackground';
 import { ModeOverlay } from './components/ModeOverlay';
@@ -12,13 +14,28 @@ import { WindChime } from './components/WindChime';
 import { ScopedParticles } from './components/ScopedParticles';
 import { BackgroundMusic } from './components/BackgroundMusic';
 
+const OWNER_EMAIL = 'thuphuong342005@gmail.com';
+
 const AppContent = () => {
   const { isModelMode } = useTheme();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 2500);
-    return () => clearTimeout(timer);
+
+    // Initial data fetch
+    fetchProfile().catch(console.warn);
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.email === OWNER_EMAIL) {
+        console.log('Owner logged in via mock');
+      }
+    });
+
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   return (

@@ -203,10 +203,22 @@ const MemoryString = ({ items, isAdmin, onEdit, onAdd }: { items: any[], isAdmin
 
 export const BAMode = () => {
   const { isModelMode, isAdmin } = useTheme();
+  const [activeSection, setActiveSection] = useState('home');
   const [profile, setProfile] = useState<any>(null);
   const [milestones, setMilestones] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [memories, setMemories] = useState<any[]>([]);
+  
+  // Navigation items
+  const navItems = [
+    { id: 'home', label: 'Home', icon: Globe },
+    { id: 'about', label: 'About BA', icon: ClipboardList },
+    { id: 'experience', label: 'Experience', icon: Workflow },
+    { id: 'projects', label: 'Projects', icon: Layers },
+    { id: 'expertise', label: 'Expertise', icon: Database },
+    { id: 'life-hobbies', label: 'Life & Hobbies', icon: Heart },
+  ];
+
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileFormData, setProfileFormData] = useState<any>({});
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -233,7 +245,7 @@ export const BAMode = () => {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        const compressed = await compressImage(reader.result as string, 1000, 0.6);
+        const compressed = await compressImage(reader.result as string, 900, 0.4);
         const currentImages = Array.isArray(projectFormData.images) ? projectFormData.images : [];
         setProjectFormData({ ...projectFormData, images: [...currentImages, compressed] });
       } catch (err) {
@@ -254,7 +266,7 @@ export const BAMode = () => {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        const compressed = await compressImage(reader.result as string, 1000, 0.6);
+        const compressed = await compressImage(reader.result as string, 900, 0.4);
         setHobbyFormData({ ...hobbyFormData, image_url: compressed });
       } catch (err) {
         console.error('Compression failed:', err);
@@ -271,7 +283,7 @@ export const BAMode = () => {
       setProfile(data);
       setProfileFormData(data);
     });
-    fetchMilestones().then(setMilestones);
+    fetchMilestones('ba').then(setMilestones);
     fetchBAProjects().then(setProjects);
     fetchLifeHobbies().then(setMemories);
   };
@@ -280,10 +292,30 @@ export const BAMode = () => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        });
+      },
+      { threshold: 0.2, rootMargin: '-10% 0px -70% 0px' }
+    );
+
+    navItems.forEach((item) => {
+      const el = document.getElementById(item.id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   const handleMilestoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await saveMilestone(milestoneFormData);
+      await saveMilestone({ ...milestoneFormData, mode: 'ba' });
       setEditingMilestoneId(null);
       loadData();
     } catch (err) {
@@ -417,7 +449,7 @@ export const BAMode = () => {
     reader.onloadend = async () => {
       try {
         const compressed = await compressImage(reader.result as string, 500, 0.7);
-        setProfileFormData({ ...profileFormData, avatar_url: compressed });
+        setProfileFormData({ ...profileFormData, avatar_url_ba: compressed });
       } catch (err) {
         console.error('Avatar compression failed:', err);
         alert('Lỗi nén ảnh đại diện.');
@@ -430,43 +462,152 @@ export const BAMode = () => {
 
   const subjects = profile?.subjects ? (typeof profile.subjects === 'string' ? JSON.parse(profile.subjects) : profile.subjects) : [];
 
+  const NavItem = ({ id, label, icon: Icon }: any) => (
+    <motion.button
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+          setActiveSection(id);
+        }
+      }}
+      className={`flex items-center gap-3 px-6 py-3 rounded-2xl transition-all duration-300 group/nav ${
+        activeSection === id 
+          ? 'bg-[#0d4f45] text-white shadow-lg' 
+          : 'bg-white/50 text-[#0d4f45] hover:bg-white border border-white/50'
+      }`}
+    >
+      <Icon size={18} className={activeSection === id ? 'text-[#A2D2FF]' : 'group-hover/nav:text-[var(--accent)]'} />
+      <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
+    </motion.button>
+  );
+
   return (
-    <div className="bg-[#f8fcfb] text-[#1a2b27] font-sans selection:bg-[#A2D2FF] selection:text-white">
+    <div className="bg-[#f8fcfb] text-[#1a2b27] font-sans selection:bg-[#A2D2FF] selection:text-white min-h-screen pb-20">
       <HeroBanner />
 
       {/* Admin Controls */}
       {isAdmin && (
-        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end gap-3 pointer-events-none">
-          {/* Admin buttons can be added here if needed, like the FAB in ModelMode */}
-          <button className="hidden" />
+        <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end gap-3">
+          <motion.button 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setIsEditingProfile(!isEditingProfile)}
+            className={`p-4 rounded-full shadow-2xl backdrop-blur-md border border-white flex items-center justify-center transition-all pointer-events-auto ${
+              isEditingProfile ? 'bg-red-500 text-white' : 'bg-[#0d4f45] text-white'
+            }`}
+          >
+            {isEditingProfile ? <X size={24} /> : <Edit2 size={24} />}
+          </motion.button>
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-6 space-y-32 py-32">
-        {/* Section A: Bento Header */}
-        <section id="professional-overview" className="grid grid-cols-1 md:grid-cols-12 gap-6 min-h-[800px]">
-          {/* Identity Card */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            className="md:col-span-8 bg-[#E6F4F1] rounded-[40px] p-10 flex flex-col md:flex-row gap-10 items-center border border-white/50 shadow-sm relative group/ident"
-          >
-            {isAdmin && !isEditingProfile && (
-              <button 
-                onClick={() => setIsEditingProfile(true)}
-                className="absolute top-6 right-6 p-3 bg-white/50 hover:bg-[var(--accent)] hover:text-white rounded-2xl transition-all shadow-sm opacity-0 group-hover/ident:opacity-100"
-              >
-                <Edit2 size={20} />
-              </button>
-            )}
+      <div className="max-w-7xl mx-auto px-6 space-y-32 py-10">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center pt-10"
+        >
+          <span className="text-[10px] font-black uppercase tracking-[0.5em] text-[#2d7a70] opacity-40">Professional Profile</span>
+          <h2 className="text-4xl md:text-6xl font-bold text-[#0d4f45] mt-2">Business Analyst</h2>
+        </motion.div>
+
+        {/* Section 1: HOME */}
+        <section id="home" className="scroll-mt-32 pt-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+            <motion.div 
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              className="lg:col-span-7 space-y-8"
+            >
+              <div className="space-y-4">
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#E6F4F1] text-[#2d7a70] rounded-full text-[10px] font-bold uppercase tracking-widest border border-[#2d7a70]/10"
+                >
+                  <Sparkles size={14} /> Available for BA Opportunities
+                </motion.div>
+                <h1 className="text-6xl md:text-8xl font-bold tracking-tight text-[#0d4f45] leading-[0.9]">
+                  Architecting <br />
+                  <span className="text-[#2d7a70]">Solutions.</span>
+                </h1>
+                <p className="text-xl md:text-2xl text-[#2d7a70]/70 max-w-xl font-medium leading-relaxed">
+                  Trình khởi đầu cho một Business Analyst năng động, kết hợp tư duy phân tích hệ thống và thẩm mỹ sản phẩm.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-4 pt-4">
+                <button onClick={() => document.getElementById('projects')?.scrollIntoView({behavior:'smooth'})} className="px-10 py-5 bg-[#0d4f45] text-white rounded-2xl text-xs font-bold uppercase tracking-[0.2em] shadow-xl hover:shadow-[#0d4f45]/20 hover:-translate-y-1 transition-all">
+                  View Case Studies
+                </button>
+                <div className="flex -space-x-4">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className="w-12 h-12 rounded-full border-2 border-white bg-[#A2D2FF] flex items-center justify-center text-white text-[10px] font-bold">
+                      {String.fromCharCode(64 + i)}
+                    </div>
+                  ))}
+                  <div className="w-12 h-12 rounded-full border-2 border-white bg-[#f8fcfb] flex items-center justify-center text-[#2d7a70] text-[10px] font-bold">
+                    +12
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              className="lg:col-span-5 relative"
+            >
+              <div className="aspect-square rounded-[60px] bg-gradient-to-br from-[#E6F4F1] to-[#f8fcfb] border border-white/50 shadow-inner overflow-hidden flex items-center justify-center p-12">
+                 <div className="w-full h-full rounded-[40px] border-2 border-dashed border-[#2d7a70]/20 flex flex-col items-center justify-center space-y-6 text-[#2d7a70]">
+                    <Database size={80} className="opacity-20 animate-pulse" />
+                    <div className="text-center space-y-2">
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] opacity-40">System Logic</p>
+                       <div className="h-0.5 w-12 bg-[#2d7a70]/20 mx-auto" />
+                       <p className="text-xs font-bold px-8">DATA-DRIVEN DECISION MAKING</p>
+                    </div>
+                 </div>
+              </div>
+              {/* Decorative elements */}
+              <div className="absolute -top-6 -right-6 w-24 h-24 bg-[#A2D2FF]/20 rounded-full blur-3xl" />
+              <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-[#E6F4F1] rounded-full blur-3xl opacity-60" />
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Section 2: ABOUT BA */}
+        <section id="about" className="scroll-mt-32 pt-10">
+          <div className="mb-12">
+             <h2 className="text-4xl font-display text-[#0d4f45] mb-2 text-center">About My Approach</h2>
+             <p className="text-[10px] tracking-[0.5em] font-bold uppercase text-gray-400 text-center">Identity & Vision</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+            {/* Identity Card */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              className="md:col-span-8 bg-[#E6F4F1]/50 rounded-[40px] p-10 flex flex-col md:flex-row gap-10 items-center border border-white/50 shadow-sm relative group/ident overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#A2D2FF]/10 rounded-full -mr-32 -mt-32 blur-3xl text-white" />
+              {isAdmin && !isEditingProfile && (
+                <button 
+                  onClick={() => setIsEditingProfile(true)}
+                  className="absolute top-6 right-6 p-3 bg-white/50 hover:bg-[var(--accent)] hover:text-white rounded-2xl transition-all shadow-sm opacity-0 group-hover/ident:opacity-100 z-10"
+                >
+                  <Edit2 size={20} />
+                </button>
+              )}
 
             <div 
               className={`w-56 h-72 rounded-[32px] overflow-hidden flex-shrink-0 shadow-2xl border-4 border-white bg-white/40 flex items-center justify-center relative group/avatar ${isAdmin && isEditingProfile ? 'ring-2 ring-[var(--accent)] cursor-pointer' : ''}`}
               onClick={() => isAdmin && isEditingProfile && avatarInputRef.current?.click()}
             >
                 {/* Image Placeholder or Actual Image */}
-                {(isEditingProfile ? profileFormData.avatar_url : profile?.avatar_url) ? (
-                  <img src={isEditingProfile ? profileFormData.avatar_url : profile?.avatar_url} className="w-full h-full object-cover" alt="Profile" />
+                {(isEditingProfile ? profileFormData.avatar_url_ba : profile?.avatar_url_ba) ? (
+                  <img src={isEditingProfile ? profileFormData.avatar_url_ba : profile?.avatar_url_ba} className="w-full h-full object-cover" alt="Profile" />
                 ) : (
                   <div className="flex flex-col items-center justify-center space-y-4 opacity-20">
                      <Smartphone size={64} className="text-[#2d7a70]" />
@@ -696,10 +837,11 @@ export const BAMode = () => {
                </div>
             </div>
           </motion.div>
+          </div>
         </section>
 
-        {/* Section B: Experience Timeline */}
-        <section id="experience" className="relative pl-12 border-l-2 border-[#E6F4F1]">
+        {/* Section 3: EXPERIENCE */}
+        <section id="experience" className="scroll-mt-32 relative pl-12 border-l-2 border-[#E6F4F1]">
            <div className="absolute top-0 -left-6 w-12 h-12 bg-[#0d4f45] text-white rounded-full flex items-center justify-center shadow-xl">
               <Workflow size={24} />
            </div>
@@ -954,8 +1096,8 @@ export const BAMode = () => {
            </div>
         </section>
 
-        {/* Section C: Project Showcase */}
-        <section id="projects" className="space-y-16">
+        {/* Section 4: PROJECTS */}
+        <section id="projects" className="scroll-mt-32 space-y-16">
           <div className="flex justify-between items-center px-4">
              <div>
                 <h2 className="text-4xl font-display text-[#0d4f45] mb-2">Project Showcase</h2>
@@ -1053,51 +1195,45 @@ export const BAMode = () => {
                       </div>
 
                       <div className="space-y-2">
-                         <label className="text-[10px] font-bold uppercase opacity-40 ml-1">Images (Tải lên hoặc nhập JSON array)</label>
-                         <div className="flex gap-2">
-                            <input 
-                              type="text" 
-                              value={Array.isArray(projectFormData.images) ? JSON.stringify(projectFormData.images) : projectFormData.images || '[]'} 
-                              onChange={e => {
-                                try {
-                                  const parsed = JSON.parse(e.target.value);
-                                  setProjectFormData({...projectFormData, images: parsed});
-                                } catch {
-                                  setProjectFormData({...projectFormData, images: e.target.value});
-                                }
-                              }}
-                              className="flex-1 p-4 rounded-[24px] bg-white border border-gray-100 focus:border-[var(--accent)] outline-none text-[10px] font-mono shadow-sm"
-                            />
-                            <button 
-                              type="button"
-                              onClick={() => projectImageInputRef.current?.click()}
-                              disabled={uploading}
-                              className="px-6 rounded-[24px] bg-white border border-gray-100 hover:bg-gray-50 flex items-center justify-center text-[var(--accent)]"
-                            >
-                              {uploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-                            </button>
-                            <input 
-                              type="file" 
-                              ref={projectImageInputRef} 
-                              className="hidden" 
-                              accept="image/*" 
-                              onChange={handleProjectImageUpload} 
-                            />
+                         <label className="text-[10px] font-bold uppercase opacity-40 ml-1">Hình ảnh dự án (Project Images)</label>
+                         <div 
+                           onClick={() => projectImageInputRef.current?.click()}
+                           className="w-full aspect-[21/9] rounded-[32px] bg-gray-50 border-2 border-dashed border-gray-100 hover:border-[var(--accent)]/30 transition-all cursor-pointer flex flex-col items-center justify-center group/proj-up relative overflow-hidden"
+                         >
+                            <div className="text-center space-y-2 relative z-10">
+                               {uploading ? (
+                                 <Loader2 size={32} className="animate-spin text-[var(--accent)] mx-auto" />
+                               ) : (
+                                 <>
+                                   <Camera size={32} className="text-gray-300 group-hover/proj-up:text-[var(--accent)] transition-colors mx-auto" />
+                                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Tải ảnh dự án lên trực tiếp</p>
+                                 </>
+                               )}
+                            </div>
                          </div>
+                         <input 
+                           type="file" 
+                           ref={projectImageInputRef} 
+                           className="hidden" 
+                           accept="image/*" 
+                           onChange={handleProjectImageUpload} 
+                         />
                          {Array.isArray(projectFormData.images) && projectFormData.images.length > 0 && (
-                           <div className="flex gap-2 mt-2 px-2 overflow-x-auto pb-2">
+                           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 pt-2">
                               {projectFormData.images.map((img: string, idx: number) => (
-                                <div key={idx} className="relative w-16 h-12 flex-shrink-0 group">
-                                   <img src={img} className="w-full h-full object-cover rounded-lg border border-gray-100" />
+                                <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden group/thumb border border-gray-100">
+                                   <img src={img} className="w-full h-full object-cover" alt={`Preview ${idx}`} />
                                    <button 
-                                      onClick={() => {
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         const newImgs = [...projectFormData.images];
                                         newImgs.splice(idx, 1);
                                         setProjectFormData({...projectFormData, images: newImgs});
                                       }}
-                                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                   >
-                                      <X size={10} />
+                                      className="absolute inset-0 bg-red-500/80 text-white flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+                                    >
+                                      <Trash2 size={16} />
                                    </button>
                                 </div>
                               ))}
@@ -1164,11 +1300,15 @@ export const BAMode = () => {
           <ProjectCarousel projects={projects} isAdmin={isAdmin} onEdit={handleEditProject} />
         </section>
 
-        {/* Section D: Expertise */}
-        <ServicesSection isAdmin={isAdmin} />
+        {/* Section 5: EXPERTISE */}
+        <section id="expertise" className="scroll-mt-32">
+          <ServicesSection isAdmin={isAdmin} mode="ba" />
+        </section>
 
-        {/* Section E: Memory String */}
-        <MemoryString items={memories} isAdmin={isAdmin} onEdit={handleEditHobby} onAdd={handleNewHobby} />
+        {/* Section 6: LIFE & HOBBIES */}
+        <section id="life-hobbies" className="scroll-mt-32">
+          <MemoryString items={memories} isAdmin={isAdmin} onEdit={handleEditHobby} onAdd={handleNewHobby} />
+        </section>
         
         <AnimatePresence>
           {editingHobbyId && (
@@ -1214,33 +1354,48 @@ export const BAMode = () => {
                        </div>
                     </div>
 
+                    {/* Image Upload Zone */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase opacity-40 ml-1">Khoảnh khắc (Image)</label>
+                      <div 
+                        onClick={() => hobbyImageInputRef.current?.click()}
+                        className="aspect-video rounded-3xl bg-gray-50 border-2 border-dashed border-gray-100 hover:border-[var(--accent)]/30 transition-all cursor-pointer overflow-hidden flex flex-col items-center justify-center relative group/hobby-up"
+                      >
+                         {hobbyFormData.image_url ? (
+                           <>
+                             <img src={hobbyFormData.image_url} className="w-full h-full object-cover" alt="Preview" />
+                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/hobby-up:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-2">
+                               <Camera size={20} /> Thay đổi ảnh
+                             </div>
+                           </>
+                         ) : (
+                           <div className="text-center space-y-2">
+                              {uploading ? (
+                                <Loader2 size={32} className="animate-spin text-[var(--accent)]" />
+                              ) : (
+                                <>
+                                  <Camera size={32} className="text-gray-300 group-hover/hobby-up:text-[var(--accent)] transition-colors" />
+                                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Click to upload photo</p>
+                                </>
+                              )}
+                           </div>
+                         )}
+                      </div>
+                      <input 
+                        type="file" 
+                        ref={hobbyImageInputRef} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={handleHobbyImageUpload} 
+                      />
+                      
+                      {/* Optional URL hidden for cleaner UI, but accessible if needed via value */}
+                      {hobbyFormData.image_url && hobbyFormData.image_url.length > 1000 && (
+                         <p className="text-[8px] font-mono text-center text-green-600 opacity-60">✓ Image data optimized & ready</p>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                       <div className="space-y-1">
-                          <label className="text-[10px] font-bold uppercase opacity-40 ml-1">Image URL / Upload</label>
-                          <div className="flex gap-2">
-                            <input 
-                              type="text" 
-                              value={hobbyFormData.image_url || ''} 
-                              onChange={e => setHobbyFormData({...hobbyFormData, image_url: e.target.value})}
-                              className="flex-1 p-3 rounded-2xl bg-white border border-gray-100 outline-none text-[10px] font-mono shadow-sm"
-                            />
-                            <button 
-                              type="button"
-                              onClick={() => hobbyImageInputRef.current?.click()}
-                              disabled={uploading}
-                              className="px-4 rounded-xl bg-white border border-gray-100 hover:bg-gray-50 flex items-center justify-center text-[var(--accent)]"
-                            >
-                              {uploading ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                            </button>
-                            <input 
-                              type="file" 
-                              ref={hobbyImageInputRef} 
-                              className="hidden" 
-                              accept="image/*" 
-                              onChange={handleHobbyImageUpload} 
-                            />
-                          </div>
-                       </div>
                        <div className="space-y-1">
                           <label className="text-[10px] font-bold uppercase opacity-40 ml-1">Địa điểm</label>
                           <input 

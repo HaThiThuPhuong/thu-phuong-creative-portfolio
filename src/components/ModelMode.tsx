@@ -12,7 +12,7 @@ import { ImageWrapper } from './ImageWrapper';
 import { Modal } from './Modal';
 import { GoogleMap } from './GoogleMap';
 import { compressImage } from '../lib/imageUtils';
-import { fetchProfile, fetchAssets, fetchCalendar, saveAsset, deleteAsset, saveCalendar } from '../services/api';
+import { fetchProfile, fetchAssets, fetchCalendar, saveAsset, deleteAsset, saveCalendar, saveProfile } from '../services/api';
 
 const SOCIAL_LINKS = {
   facebook: 'https://www.facebook.com/share/17zvLV3sdQ/',
@@ -178,7 +178,7 @@ const DiaryEntryForm = ({ isOpen, onClose, onSave, editingItem = null }: any) =>
         const reader = new FileReader();
         reader.onloadend = async () => {
           try {
-            const compressed = await compressImage(reader.result as string, 1000, 0.6);
+            const compressed = await compressImage(reader.result as string, 900, 0.5);
             resolve(compressed);
           } catch (err) {
             reject(err);
@@ -1606,6 +1606,114 @@ const AssetDetailView = ({ selectedAsset }: { selectedAsset: any }) => {
   );
 };
 
+const ProfileForm = ({ isOpen, onClose, onSave, profile }: any) => {
+  const [formData, setFormData] = useState<any>({
+    height: 160,
+    weight: 48,
+    bust: 85,
+    waist: 64,
+    hips: 92,
+    current_location: 'Hà Nội'
+  });
+
+  useEffect(() => {
+    if (profile) {
+      setFormData({
+        height: profile.height || 160,
+        weight: profile.weight || 48,
+        bust: profile.bust || 85,
+        waist: profile.waist || 64,
+        hips: profile.hips || 92,
+        current_location: profile.current_location || 'Hà Nội'
+      });
+    }
+  }, [profile, isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-[40px] w-full max-w-md p-8 shadow-2xl space-y-8"
+      >
+        <div>
+          <h3 className="text-2xl font-display text-[var(--accent)]">Cập nhật chỉ số Model</h3>
+          <p className="text-[10px] uppercase tracking-widest opacity-40">Thông tin cơ bản & Chỉ số hình thể</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold opacity-40">Chiều cao (cm)</label>
+            <input 
+              type="number" 
+              value={formData.height}
+              onChange={e => setFormData({...formData, height: parseInt(e.target.value)})}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm font-bold text-[var(--accent)]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold opacity-40">Cân nặng (kg)</label>
+            <input 
+              type="number" 
+              value={formData.weight}
+              onChange={e => setFormData({...formData, weight: parseInt(e.target.value)})}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm font-bold text-[var(--accent)]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold opacity-40">Vòng 1 (Bust)</label>
+            <input 
+              type="number" 
+              value={formData.bust}
+              onChange={e => setFormData({...formData, bust: parseInt(e.target.value)})}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm font-bold text-[var(--accent)]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold opacity-40">Vòng 2 (Waist)</label>
+            <input 
+              type="number" 
+              value={formData.waist}
+              onChange={e => setFormData({...formData, waist: parseInt(e.target.value)})}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm font-bold text-[var(--accent)]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold opacity-40">Vòng 3 (Hips)</label>
+            <input 
+              type="number" 
+              value={formData.hips}
+              onChange={e => setFormData({...formData, hips: parseInt(e.target.value)})}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm font-bold text-[var(--accent)]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold opacity-40">Địa chỉ</label>
+            <input 
+              type="text" 
+              value={formData.current_location}
+              onChange={e => setFormData({...formData, current_location: e.target.value})}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm font-bold text-[var(--accent)]"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-4 pt-4">
+          <button onClick={onClose} className="flex-1 py-4 text-xs font-bold uppercase text-gray-400">Hủy</button>
+          <button 
+            onClick={() => onSave(formData)}
+            className="flex-[2] bg-[var(--accent)] text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg active:scale-95 transition-all"
+          >
+            Lưu thay đổi
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 export const ModelMode = () => {
   const { isAdmin } = useTheme();
   const [profile, setProfile] = useState<any>(null);
@@ -1618,6 +1726,7 @@ export const ModelMode = () => {
 
   const [calendarData, setCalendarData] = useState<any[]>([]);
   const [isCalendarFormOpen, setIsCalendarFormOpen] = useState(false);
+  const [isProfileFormOpen, setIsProfileFormOpen] = useState(false);
 
   const loadData = () => {
     fetchProfile().then(setProfile).catch(console.error);
@@ -1670,6 +1779,17 @@ export const ModelMode = () => {
       loadData();
     } catch (error) {
       console.error('Calendar save error:', error);
+    }
+  };
+
+  const handleSaveProfile = async (data: any) => {
+    try {
+      await saveProfile({ ...profile, ...data });
+      loadData();
+      setIsProfileFormOpen(false);
+    } catch (error) {
+      console.error('Profile save error:', error);
+      alert('Không thể lưu thông tin cá nhân.');
     }
   };
 
@@ -1772,17 +1892,32 @@ export const ModelMode = () => {
 
       <div className="max-w-7xl mx-auto px-6">
         {/* Profile Stats */}
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-32">
-          <StatCard label="Height" value={profile?.height || "160"} icon={Ruler} unit="cm" />
-          <StatCard label="Weight" value={profile?.weight || "48"} icon={Heart} unit="kg" />
-          <StatCard label="Bust" value={profile?.bust || "85"} icon={Scissors} unit="cm" />
-          <StatCard label="Waist" value={profile?.waist || "64"} icon={Shirt} unit="cm" />
-          <StatCard label="Hips" value={profile?.hips || "92"} icon={Camera} unit="cm" />
+        <section className="relative group/stats mb-32">
+          {isAdmin && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsProfileFormOpen(true)}
+              className="absolute -top-12 right-0 p-3 bg-white shadow-xl rounded-full text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white transition-all z-20"
+            >
+              <Edit2 size={16} />
+            </motion.button>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <StatCard label="Height" value={profile?.height || "160"} icon={Ruler} unit="cm" />
+            <StatCard label="Weight" value={profile?.weight || "48"} icon={Heart} unit="kg" />
+            <StatCard label="Bust" value={profile?.bust || "85"} icon={Scissors} unit="cm" />
+            <StatCard label="Waist" value={profile?.waist || "64"} icon={Shirt} unit="cm" />
+            <StatCard label="Hips" value={profile?.hips || "92"} icon={Camera} unit="cm" />
+          </div>
         </section>
 
         {/* Location Info */}
         <div className="flex justify-center mb-12">
-            <div className="flex items-center gap-2 px-6 py-2 bg-[var(--secondary)] rounded-full text-[var(--accent)] text-xs font-bold uppercase tracking-[0.2em] shadow-sm italic">
+            <div 
+              className={`flex items-center gap-2 px-6 py-2 bg-[var(--secondary)] rounded-full text-[var(--accent)] text-xs font-bold uppercase tracking-[0.2em] shadow-sm italic ${isAdmin ? 'cursor-pointer hover:scale-105 transition-transform' : ''}`}
+              onClick={() => isAdmin && setIsProfileFormOpen(true)}
+            >
                 <MapPin size={14} /> {profile?.current_location || 'Hà Nội'}
             </div>
         </div>
@@ -1889,7 +2024,7 @@ export const ModelMode = () => {
       </section>
 
       {/* Section: Services & Expertise */}
-      <ServicesSection isAdmin={isAdmin} />
+      <ServicesSection isAdmin={isAdmin} mode="model" />
 
       {/* Section 3: Upcoming Concepts (Origami Gallery) */}
       <section id="upcoming-concepts" className="relative py-32 bg-white/5 border-t border-[var(--accent)]/5 overflow-hidden">
@@ -1947,6 +2082,13 @@ export const ModelMode = () => {
         onClose={() => setIsCalendarFormOpen(false)}
         onSave={handleSaveCalendar}
         existingSlots={calendarData}
+      />
+
+      <ProfileForm 
+        isOpen={isProfileFormOpen}
+        onClose={() => setIsProfileFormOpen(false)}
+        onSave={handleSaveProfile}
+        profile={profile}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth } from '../lib/firebase';
+import { ADMIN_EMAIL } from '../lib/config';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 interface ThemeContextType {
@@ -15,7 +16,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const ADMIN_EMAIL = 'thuphuong342005@gmail.com';
+// const ADMIN_EMAIL = 'thuphuong342005@gmail.com';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isModelMode, setIsModelMode] = useState(true);

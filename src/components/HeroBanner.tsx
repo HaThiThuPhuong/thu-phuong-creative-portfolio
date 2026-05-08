@@ -62,7 +62,7 @@ export const HeroBanner = () => {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        const compressedUrl = await compressImage(reader.result as string, 1400, 0.6);
+        const compressedUrl = await compressImage(reader.result as string, 1200, 0.5);
         const isReplace = uploadMode === 'replace' && currentBanners[index];
         const data = {
           type: isModelMode ? 'model_banner' : 'ba_banner',
@@ -183,17 +183,35 @@ export const HeroBanner = () => {
             >
               <img 
                 src={bannerUrls[index]} 
-                className={`w-full h-full object-cover animate-ken-burns ${!isModelMode ? 'opacity-60 grayscale-[30%]' : ''}`} 
+                className={`w-full h-full object-cover animate-ken-burns ${!isModelMode ? 'opacity-40 grayscale-[50%] brightness-[0.4] saturate-50' : ''}`} 
                 alt={`${isModelMode ? 'Model' : 'BA'} Slide`}
                 referrerPolicy="no-referrer"
               />
-              {!isModelMode && <div className="absolute inset-0 bg-gradient-to-br from-[#F0FFF0]/40 to-transparent" />}
+              {!isModelMode && (
+                <div className="absolute inset-0 bg-[#0d4f45]/30 backdrop-filter backdrop-blur-[2px] flex items-center justify-center overflow-hidden">
+                   {/* Technical Grid Pattern */}
+                   <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(#2d7a70 1px, transparent 1px), linear-gradient(90deg, #2d7a70 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                   <div className="absolute inset-0 bg-gradient-to-b from-[#0d4f45]/60 to-transparent" />
+                </div>
+              )}
             </motion.div>
           ) : (
-            <div key="empty-banner" className="absolute inset-0 bg-gradient-to-br from-black to-zinc-900 flex items-center justify-center">
-               <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">
-                 Waiting for {isModelMode ? 'Model' : 'BA'} Banner SQL Data
-               </p>
+            <div key="empty-banner" className="absolute inset-0 bg-gradient-to-br from-[#0d4f45] to-[#1a2b27] flex items-center justify-center overflow-hidden">
+               {!isModelMode ? (
+                 <>
+                   <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#A2D2FF 1px, transparent 1px), linear-gradient(90deg, #A2D2FF 1px, transparent 1px)', backgroundSize: '80px 80px' }} />
+                   <div className="relative z-10 flex flex-col items-center text-center space-y-4">
+                     <div className="w-24 h-24 rounded-full border-4 border-[#2d7a70]/30 flex items-center justify-center text-[#2d7a70]/50 animate-pulse">
+                        <Camera size={40} />
+                     </div>
+                     <p className="text-[#2d7a70] text-[10px] uppercase tracking-[0.6em] font-black opacity-40">Architecting Business Logic</p>
+                   </div>
+                 </>
+               ) : (
+                 <p className="text-white/10 text-[10px] uppercase tracking-[0.5em] font-bold">
+                   Waiting for Model Banner SQL Data
+                 </p>
+               )}
             </div>
           )}
         </AnimatePresence>

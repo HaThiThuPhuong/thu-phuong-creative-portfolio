@@ -31,13 +31,13 @@ export const ModeOverlay: React.FC = () => {
              background: isModelMode ? '#FFF0F5' : '#F0FFF0',
            }}
         >
-          {/* Strawberry icon center during transition */}
+          {/* Mode icon center during transition */}
           <motion.div 
             initial={{ scale: 0 }}
             animate={{ scale: [0, 1.2, 1] }}
-            className="text-9xl"
+            className="text-9xl bg-white/20 p-20 rounded-full backdrop-blur-xl border border-white/30"
           >
-            🍓
+            {isModelMode ? '🌸' : '📊'}
           </motion.div>
         </motion.div>
       )}

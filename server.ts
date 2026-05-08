@@ -17,10 +17,69 @@ async function startServer() {
 
   app.use(express.json({ limit: '50mb' }));
 
+  // Auth simple implementation
+  const ADMIN_PWD = process.env.ADMIN_PASSWORD || 'thuphuongadmin';
+  const SESSION_TOKEN = 'secret_session_token_thuphuong';
+
+  app.post('/api/auth/login', (req, res) => {
+    const { password } = req.body;
+    if (password === ADMIN_PWD) {
+      res.json({ 
+        token: SESSION_TOKEN, 
+        user: { 
+          uid: 'admin',
+          email: 'thuphuong342005@gmail.com', 
+          displayName: 'Thu Phương (Admin)',
+          isAdmin: true
+        } 
+      });
+    } else {
+      res.status(401).json({ error: 'Mật khẩu không chính xác' });
+    }
+  });
+
+  app.get('/api/auth/me', (req, res) => {
+    const token = req.headers.authorization;
+    if (token === SESSION_TOKEN) {
+      res.json({ 
+        uid: 'admin',
+        email: 'thuphuong342005@gmail.com', 
+        displayName: 'Thu Phương (Admin)',
+        isAdmin: true
+      });
+    } else {
+      res.status(401).json({ error: 'Not logged in' });
+    }
+  });
+
+  const authMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    // For local dev and simple usage, we allow GET always, but protect mutations
+    if (req.method === 'GET') return next();
+    
+    const token = req.headers.authorization;
+    if (token === SESSION_TOKEN) {
+      next();
+    } else {
+      res.status(401).json({ error: 'Vui lòng đăng nhập để thực hiện thao tác này' });
+    }
+  };
+
+  const safeParse = (str: string | null | undefined, fallback: any) => {
+    try {
+      if (!str || typeof str !== 'string') return fallback;
+      return JSON.parse(str);
+    } catch (e) {
+      return fallback;
+    }
+  };
+
   // API Routes
   app.get('/api/profile', (req, res) => {
     try {
-      const profile = db.prepare('SELECT * FROM profile WHERE id = 1').get();
+      const profile = db.prepare('SELECT * FROM profile WHERE id = 1').get() as any;
+      if (profile) {
+        profile.subjects = safeParse(profile.subjects, []);
+      }
       res.json(profile || {});
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -28,7 +87,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/profile', (req, res) => {
+  app.post('/api/profile', authMiddleware, (req, res) => {
     const fields = Object.keys(req.body);
     if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
@@ -60,11 +119,16 @@ async function startServer() {
       const { type } = req.query;
       let assets;
       if (type) {
-        assets = db.prepare('SELECT * FROM assets WHERE type = ?').all(type);
+        assets = db.prepare('SELECT * FROM assets WHERE type = ?').all(type) as any[];
       } else {
-        assets = db.prepare('SELECT * FROM assets').all();
+        assets = db.prepare('SELECT * FROM assets').all() as any[];
       }
-      res.json(assets || []);
+      res.json((assets || []).map((a: any) => ({
+        ...a,
+        id: String(a.id),
+        urls: safeParse(a.urls, []),
+        metadata: safeParse(a.metadata, {})
+      })));
     } catch (error) {
       console.error('Error fetching assets:', error);
       res.status(500).json({ error: 'Internal Server Error' });
@@ -72,7 +136,7 @@ async function startServer() {
   });
 
   // Extract metadata from Facebook/Instagram
-  app.post('/api/assets/extract', async (req, res) => {
+  app.post('/api/assets/extract', authMiddleware, async (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
@@ -112,42 +176,74 @@ async function startServer() {
     }
   });
 
+  const handleUpsert = (table: string, req: express.Request, res: express.Response) => {
+    try {
+      // Get table info to filter valid columns
+      const tableInfo = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+      const validCols = new Set(tableInfo.map(info => info.name));
+      const colTypes = tableInfo.reduce((acc, info) => {
+        acc[info.name] = info.type.toUpperCase();
+        return acc;
+      }, {} as Record<string, string>);
+
+      // ID resolution
+      const paramId = req.params.id;
+      if (paramId) req.body.id = paramId;
+
+      // Ensure we have an ID if it's a primary key table
+      if (validCols.has('id') && !req.body.id) {
+        req.body.id = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+
+      const fields = Object.keys(req.body).filter(field => validCols.has(field));
+      
+      if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+      const cols = fields.join(', ');
+      const placeholders = fields.map(() => '?').join(', ');
+      const values = fields.map(field => {
+        let val = req.body[field];
+        
+        // Handle JSON fields
+        if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
+          return JSON.stringify(val);
+        }
+
+        // Handle numeric fields based on schema
+        if (colTypes[field] === 'INTEGER') {
+           if (val === null || val === undefined || val === '') return null;
+           const num = parseInt(val, 10);
+           return isNaN(num) ? val : num; 
+        }
+
+        // Handle text fields - ensure string
+        if (colTypes[field] === 'TEXT' && val !== null && val !== undefined) {
+           return String(val);
+        }
+
+        return val;
+      });
+
+      const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${placeholders})`);
+      stmt.run(...values);
+      res.json({ success: true, id: String(req.body.id) });
+    } catch (error) {
+      console.error(`Error upserting into ${table}:`, error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  };
+
   // Manage assets
-  app.post('/api/assets', (req, res) => {
-    const { type, url, urls, title, description, date, location, photographer, makeup, grid_class, concept_vibe, facebook_post_url, metadata } = req.body;
-    try {
-      const stmt = db.prepare(`
-        INSERT INTO assets (type, url, urls, title, description, date, location, photographer, makeup, grid_class, concept_vibe, facebook_post_url, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const info = stmt.run(type, url, JSON.stringify(urls || []), title, description, date, location, photographer, makeup, grid_class, concept_vibe, facebook_post_url, metadata);
-      res.json({ id: info.lastInsertRowid });
-    } catch (error) {
-      console.error('Error adding asset:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.post('/api/assets', authMiddleware, (req, res) => {
+    handleUpsert('assets', req, res);
   });
 
-  app.put('/api/assets/:id', (req, res) => {
-    const { id } = req.params;
-    const { type, url, urls, title, description, date, location, photographer, makeup, grid_class, concept_vibe, facebook_post_url, metadata } = req.body;
-    try {
-      const stmt = db.prepare(`
-        UPDATE assets SET 
-          type = ?, url = ?, urls = ?, title = ?, description = ?, date = ?, location = ?, 
-          photographer = ?, makeup = ?, grid_class = ?, 
-          concept_vibe = ?, facebook_post_url = ?, metadata = ?
-        WHERE id = ?
-      `);
-      stmt.run(type, url, JSON.stringify(urls || []), title, description, date, location, photographer, makeup, grid_class, concept_vibe, facebook_post_url, metadata, id);
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error updating asset:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.put('/api/assets/:id', authMiddleware, (req, res) => {
+    // For specific PUT, we can still use dynamic update or just redirect to upsert
+    handleUpsert('assets', req, res);
   });
 
-  app.delete('/api/assets/:id', (req, res) => {
+  app.delete('/api/assets/:id', authMiddleware, (req, res) => {
     const { id } = req.params;
     try {
       db.prepare('DELETE FROM assets WHERE id = ?').run(id);
@@ -160,32 +256,19 @@ async function startServer() {
 
   app.get('/api/calendar', (req, res) => {
     try {
-      const calendar = db.prepare('SELECT * FROM calendar ORDER BY date_str ASC').all();
-      res.json(calendar || []);
+      const calendar = db.prepare('SELECT * FROM calendar ORDER BY date_str ASC').all() as any[];
+      res.json((calendar || []).map(c => ({ ...c, id: String(c.id) })));
     } catch (error) {
       console.error('Error fetching calendar:', error);
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
 
-  app.post('/api/calendar', (req, res) => {
-    const { date_str, status } = req.body;
-    try {
-      // Upsert logic: if same date exists, update status, else insert
-      const existing = db.prepare('SELECT id FROM calendar WHERE date_str = ?').get(date_str);
-      if (existing) {
-        db.prepare('UPDATE calendar SET status = ? WHERE date_str = ?').run(status, date_str);
-      } else {
-        db.prepare('INSERT INTO calendar (date_str, status) VALUES (?, ?)').run(date_str, status);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error saving calendar:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.post('/api/calendar', authMiddleware, (req, res) => {
+    handleUpsert('calendar', req, res);
   });
 
-  app.delete('/api/calendar/:id', (req, res) => {
+  app.delete('/api/calendar/:id', authMiddleware, (req, res) => {
     const { id } = req.params;
     try {
       db.prepare('DELETE FROM calendar WHERE id = ?').run(id);
@@ -197,18 +280,18 @@ async function startServer() {
   });
 
   app.get('/api/services', (req, res) => {
-    console.log('GET /api/services', req.query);
     try {
       const { mode } = req.query;
       let services;
       if (mode) {
-        services = db.prepare('SELECT * FROM services WHERE mode = ?').all(mode);
+        services = db.prepare('SELECT * FROM services WHERE mode = ?').all(mode) as any[];
       } else {
-        services = db.prepare('SELECT * FROM services').all();
+        services = db.prepare('SELECT * FROM services').all() as any[];
       }
       res.json((services || []).map((s: any) => ({
         ...s,
-        benefits: JSON.parse(s.benefits || '[]')
+        id: String(s.id),
+        benefits: safeParse(s.benefits, [])
       })));
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -216,30 +299,15 @@ async function startServer() {
     }
   });
 
-  app.post('/api/services', (req, res) => {
-    const { id, mode, title, description, icon_name, stat_label, stat_value, image_url, benefits } = req.body;
-    try {
-      const benefitsStr = JSON.stringify(benefits || []);
-      if (id) {
-        db.prepare(`
-          UPDATE services 
-          SET mode = ?, title = ?, description = ?, icon_name = ?, stat_label = ?, stat_value = ?, image_url = ?, benefits = ?
-          WHERE id = ?
-        `).run(mode, title, description, icon_name, stat_label, stat_value, image_url, benefitsStr, id);
-      } else {
-        db.prepare(`
-          INSERT INTO services (mode, title, description, icon_name, stat_label, stat_value, image_url, benefits)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(mode, title, description, icon_name, stat_label, stat_value, image_url, benefitsStr);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error saving service:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.post('/api/services', authMiddleware, (req, res) => {
+    handleUpsert('services', req, res);
   });
 
-  app.delete('/api/services/:id', (req, res) => {
+  app.put('/api/services/:id', authMiddleware, (req, res) => {
+    handleUpsert('services', req, res);
+  });
+
+  app.delete('/api/services/:id', authMiddleware, (req, res) => {
     const { id } = req.params;
     try {
       db.prepare('DELETE FROM services WHERE id = ?').run(id);
@@ -251,12 +319,18 @@ async function startServer() {
   });
 
   app.get('/api/milestones', (req, res) => {
-    console.log('GET /api/milestones');
     try {
-      const milestones = db.prepare('SELECT * FROM career_milestones ORDER BY year DESC').all();
+      const { mode } = req.query;
+      let milestones;
+      if (mode) {
+        milestones = db.prepare('SELECT * FROM career_milestones WHERE mode = ? ORDER BY year DESC').all(mode) as any[];
+      } else {
+        milestones = db.prepare('SELECT * FROM career_milestones ORDER BY year DESC').all() as any[];
+      }
       res.json((milestones || []).map((m: any) => ({
         ...m,
-        projects: JSON.parse(m.projects || '[]')
+        id: String(m.id),
+        projects: safeParse(m.projects, [])
       })));
     } catch (error) {
       console.error('Error fetching milestones:', error);
@@ -264,30 +338,15 @@ async function startServer() {
     }
   });
 
-  app.post('/api/milestones', (req, res) => {
-    const { id, year, period, type, role, company, description, status, projects } = req.body;
-    try {
-      const projectsStr = JSON.stringify(projects || []);
-      if (id) {
-        db.prepare(`
-          UPDATE career_milestones 
-          SET year = ?, period = ?, type = ?, role = ?, company = ?, description = ?, status = ?, projects = ?
-          WHERE id = ?
-        `).run(year, period, type, role, company, description, status, projectsStr, id);
-      } else {
-        db.prepare(`
-          INSERT INTO career_milestones (year, period, type, role, company, description, status, projects)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(year, period, type, role, company, description, status, projectsStr);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error saving milestone:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.post('/api/milestones', authMiddleware, (req, res) => {
+    handleUpsert('career_milestones', req, res);
   });
 
-  app.delete('/api/milestones/:id', (req, res) => {
+  app.put('/api/milestones/:id', authMiddleware, (req, res) => {
+    handleUpsert('career_milestones', req, res);
+  });
+
+  app.delete('/api/milestones/:id', authMiddleware, (req, res) => {
     const { id } = req.params;
     try {
       db.prepare('DELETE FROM career_milestones WHERE id = ?').run(id);
@@ -299,13 +358,13 @@ async function startServer() {
   });
 
   app.get('/api/ba-projects', (req, res) => {
-    console.log('GET /api/ba-projects');
     try {
-      const projects = db.prepare('SELECT * FROM ba_projects').all();
+      const projects = db.prepare('SELECT * FROM ba_projects').all() as any[];
       res.json((projects || []).map((p: any) => ({
         ...p,
-        images: JSON.parse(p.images || '[]'),
-        tags: JSON.parse(p.tags || '[]')
+        id: String(p.id),
+        images: safeParse(p.images, []),
+        tags: safeParse(p.tags, [])
       })));
     } catch (error) {
       console.error('Error fetching BA projects:', error);
@@ -313,32 +372,15 @@ async function startServer() {
     }
   });
 
-  app.post('/api/ba-projects', (req, res) => {
-    const { id, title, role, description, flowchart_url, github_url, grid_class, images, tags } = req.body;
-    try {
-      const imagesStr = JSON.stringify(images || []);
-      const tagsStr = JSON.stringify(tags || []);
-      
-      if (id) {
-        db.prepare(`
-          UPDATE ba_projects 
-          SET title = ?, role = ?, description = ?, flowchart_url = ?, github_url = ?, grid_class = ?, images = ?, tags = ?
-          WHERE id = ?
-        `).run(title, role, description, flowchart_url, github_url, grid_class, imagesStr, tagsStr, id);
-      } else {
-        db.prepare(`
-          INSERT INTO ba_projects (title, role, description, flowchart_url, github_url, grid_class, images, tags)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(title, role, description, flowchart_url, github_url, grid_class, imagesStr, tagsStr);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error saving BA project:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.post('/api/ba-projects', authMiddleware, (req, res) => {
+    handleUpsert('ba_projects', req, res);
   });
 
-  app.delete('/api/ba-projects/:id', (req, res) => {
+  app.put('/api/ba-projects/:id', authMiddleware, (req, res) => {
+    handleUpsert('ba_projects', req, res);
+  });
+
+  app.delete('/api/ba-projects/:id', authMiddleware, (req, res) => {
     const { id } = req.params;
     try {
       db.prepare('DELETE FROM ba_projects WHERE id = ?').run(id);
@@ -350,39 +392,24 @@ async function startServer() {
   });
 
   app.get('/api/life-hobbies', (req, res) => {
-    console.log('GET /api/life-hobbies');
     try {
-      const items = db.prepare('SELECT * FROM life_hobbies').all();
-      res.json(items || []);
+      const items = db.prepare('SELECT * FROM life_hobbies').all() as any[];
+      res.json((items || []).map(i => ({ ...i, id: String(i.id) })));
     } catch (error) {
       console.error('Error fetching life hobbies:', error);
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
 
-  app.post('/api/life-hobbies', (req, res) => {
-    const { id, title, thought, image_url, date, location } = req.body;
-    try {
-      if (id) {
-        db.prepare(`
-          UPDATE life_hobbies 
-          SET title = ?, thought = ?, image_url = ?, date = ?, location = ?
-          WHERE id = ?
-        `).run(title, thought, image_url, date, location, id);
-      } else {
-        db.prepare(`
-          INSERT INTO life_hobbies (title, thought, image_url, date, location)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(title, thought, image_url, date, location);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error saving life hobby:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+  app.post('/api/life-hobbies', authMiddleware, (req, res) => {
+    handleUpsert('life_hobbies', req, res);
   });
 
-  app.delete('/api/life-hobbies/:id', (req, res) => {
+  app.put('/api/life-hobbies/:id', authMiddleware, (req, res) => {
+    handleUpsert('life_hobbies', req, res);
+  });
+
+  app.delete('/api/life-hobbies/:id', authMiddleware, (req, res) => {
     const { id } = req.params;
     try {
       db.prepare('DELETE FROM life_hobbies WHERE id = ?').run(id);

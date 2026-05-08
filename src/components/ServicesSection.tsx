@@ -68,7 +68,7 @@ const ServiceForm = ({ isOpen, onClose, onSave, editingItem = null, mode }: any)
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        const compressed = await compressImage(reader.result as string, 800, 0.6);
+        const compressed = await compressImage(reader.result as string, 800, 0.4);
         setFormData((prev: any) => ({
           ...prev,
           image_url: compressed
@@ -342,16 +342,22 @@ const ServiceCard = ({ service, isCenter, isAdmin, onEdit, onDelete }: { service
   );
 };
 
-export const ServicesSection = ({ isAdmin }: { isAdmin?: boolean }) => {
+export const ServicesSection = ({ isAdmin, mode: passedMode }: { isAdmin?: boolean; mode?: 'model' | 'ba' }) => {
   const { isModelMode } = useTheme();
+  const [mode, setMode] = useState<'model' | 'ba'>(passedMode || (isModelMode ? 'model' : 'ba'));
   const [services, setServices] = useState<Service[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
 
+  useEffect(() => {
+    if (passedMode) setMode(passedMode);
+    else setMode(isModelMode ? 'model' : 'ba');
+  }, [passedMode, isModelMode]);
+
   const loadServices = () => {
-    fetchServices(isModelMode ? 'model' : 'ba').then(setServices).catch(console.error);
-    fetchAssets(isModelMode ? 'model_expertise_bg' : 'ba_expertise_bg').then((data: any) => {
+    fetchServices(mode).then(setServices).catch(console.error);
+    fetchAssets(mode === 'model' ? 'model_expertise_bg' : 'ba_expertise_bg').then((data: any) => {
       if (data && data.length > 0) {
         // Use the most recent one
         setSectionBg(data[data.length - 1].url);
@@ -373,9 +379,9 @@ export const ServicesSection = ({ isAdmin }: { isAdmin?: boolean }) => {
     const reader = new FileReader();
     reader.onloadend = async () => {
       try {
-        const compressed = await compressImage(reader.result as string, 1400, 0.5);
+        const compressed = await compressImage(reader.result as string, 1000, 0.4);
         await saveAsset({
-          type: isModelMode ? 'model_expertise_bg' : 'ba_expertise_bg',
+          type: mode === 'model' ? 'model_expertise_bg' : 'ba_expertise_bg',
           url: compressed,
           title: 'Expertise BG'
         });
@@ -392,7 +398,7 @@ export const ServicesSection = ({ isAdmin }: { isAdmin?: boolean }) => {
 
   useEffect(() => {
     loadServices();
-  }, [isModelMode]);
+  }, [mode]);
 
   const handleSaveService = async (data: any) => {
     try {
@@ -558,7 +564,7 @@ export const ServicesSection = ({ isAdmin }: { isAdmin?: boolean }) => {
         onClose={() => setIsFormOpen(false)}
         onSave={handleSaveService}
         editingItem={editingService}
-        mode={isModelMode ? 'model' : 'ba'}
+        mode={mode}
       />
     </section>
   );
