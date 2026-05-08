@@ -1,14 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { auth } from '../lib/firebase';
-import { ADMIN_EMAIL } from '../lib/config';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth, onAuthStateChanged } from '../lib/firebase';
 
 interface ThemeContextType {
   isModelMode: boolean;
   isParticlesEnabled: boolean;
   isMuted: boolean;
   isAdmin: boolean;
-  user: User | null;
+  user: any | null;
   toggleMode: () => void;
   toggleParticles: () => void;
   toggleMute: () => void;
@@ -16,19 +14,19 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-// const ADMIN_EMAIL = 'thuphuong342005@gmail.com';
+const ADMIN_EMAIL = 'thuphuong342005@gmail.com';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isModelMode, setIsModelMode] = useState(true);
   const [isParticlesEnabled, setIsParticlesEnabled] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
-      setIsAdmin(firebaseUser?.email === ADMIN_EMAIL);
+      setIsAdmin(!!firebaseUser?.isAdmin);
     });
     return () => unsubscribe();
   }, []);
@@ -49,9 +47,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (isModelMode) {
       document.body.classList.remove('mode-ba');
       document.body.style.fontFamily = "'Playfair Display', serif";
+      document.body.style.backgroundColor = "white";
     } else {
       document.body.classList.add('mode-ba');
       document.body.style.fontFamily = "'Inter', sans-serif";
+      document.body.style.backgroundColor = "#f8fcfb";
     }
   }, [isModelMode]);
 

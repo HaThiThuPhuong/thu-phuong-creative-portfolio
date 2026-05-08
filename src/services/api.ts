@@ -1,18 +1,6 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy,
-  addDoc,
-  serverTimestamp
-} from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+
+// SQLite-only API service
+// Removed Firebase logic to prevent Quota Exceeded errors
 
 enum OperationType {
   CREATE = 'create',
@@ -21,34 +9,6 @@ enum OperationType {
   LIST = 'list',
   GET = 'get',
   WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
 }
 
 function sanitizeData(data: any): any {
@@ -69,290 +29,362 @@ function sanitizeData(data: any): any {
   return sanitized;
 }
 
+function getTimestampInSeconds(val: any): number {
+  if (!val) return 0;
+  if (typeof val === 'number') return val > 9999999999 ? val / 1000 : val;
+  if (typeof val === 'string') {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d.getTime() / 1000;
+  }
+  return 0;
+}
+
+// Caching Helpers
+const CACHE_PREFIX = 'fw_sqlite_cache_';
+const DEFAULT_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
+function getCache(key: string, allowStale = false) {
+  try {
+    const cached = localStorage.getItem(CACHE_PREFIX + key);
+    if (!cached) return null;
+    const { data, expiry } = JSON.parse(cached);
+    if (!allowStale && Date.now() > expiry) {
+      return null;
+    }
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCache(key: string, data: any, expiryMs = DEFAULT_EXPIRY) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({
+      data,
+      expiry: Date.now() + expiryMs
+    }));
+  } catch (e) {}
+}
+
+function clearCache(keyPrefix?: string) {
+  try {
+    if (!keyPrefix) {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith(CACHE_PREFIX)) localStorage.removeItem(key);
+      });
+      return;
+    }
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith(CACHE_PREFIX + keyPrefix)) localStorage.removeItem(key);
+    });
+  } catch (e) {}
+}
+
+async function request(path: string, options: RequestInit = {}) {
+  const token = localStorage.getItem('auth_token');
+  const headers: any = {
+    ...options.headers,
+  };
+  
+  if (token) {
+    headers['Authorization'] = token;
+  }
+
+  try {
+    const res = await fetch(path, { ...options, headers });
+    if (!res.ok) {
+      if (res.status === 401) {
+        // Token expired or invalid
+        localStorage.removeItem('auth_token');
+      }
+      const error = await res.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || 'Request failed');
+    }
+    return await res.json();
+  } catch (err) {
+    // Only log if it's not a common auth failure
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes('Not logged in') && !msg.includes('Vui lòng đăng nhập')) {
+      console.error(`API Request failed for ${path}:`, err);
+    }
+    throw err;
+  }
+}
+
+export async function login(password: string) {
+  const data = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  if (data.token) {
+    localStorage.setItem('auth_token', data.token);
+  }
+  return data;
+}
+
+export async function logout() {
+  localStorage.removeItem('auth_token');
+  return { success: true };
+}
+
+export async function getMe() {
+  const token = localStorage.getItem('auth_token');
+  if (!token) return null;
+
+  try {
+    return await request('/api/auth/me');
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function fetchProfile() {
-  const path = 'profile/main';
+  const cacheKey = 'profile';
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    const docRef = doc(db, 'profile', 'main');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return docSnap.data();
-    }
-    return {};
+    const data = await request('/api/profile');
+    setCache(cacheKey, data);
+    return data;
   } catch (err) {
-    handleFirestoreError(err, OperationType.GET, path);
-    return {};
-  }
-}
-
-export async function fetchAssets(type?: string) {
-  const path = 'assets';
-  try {
-    let q = query(collection(db, 'assets'));
-    if (type) {
-      q = query(collection(db, 'assets'), where('type', '==', type));
-    }
-    const querySnapshot = await getDocs(q);
-    const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    // Sort in memory to handle legacy docs without createdAt
-    return data.sort((a: any, b: any) => {
-      const timeA = a.createdAt?.seconds || 0;
-      const timeB = b.createdAt?.seconds || 0;
-      return timeB - timeA;
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export async function fetchServices(mode?: 'model' | 'ba') {
-  const path = 'services';
-  try {
-    let q = collection(db, 'services');
-    if (mode) {
-      // @ts-ignore
-      q = query(q, where('mode', '==', mode));
-    }
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data(),
-      benefits: typeof (doc.data() as any).benefits === 'string' ? JSON.parse((doc.data() as any).benefits) : ((doc.data() as any).benefits || [])
-    }));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export async function fetchMilestones() {
-  const path = 'milestones';
-  try {
-    const q = query(collection(db, 'milestones'), orderBy('year', 'desc'));
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data(),
-      projects: typeof (doc.data() as any).projects === 'string' ? JSON.parse((doc.data() as any).projects) : ((doc.data() as any).projects || [])
-    }));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export async function fetchBAProjects() {
-  const path = 'ba_projects';
-  try {
-    const querySnapshot = await getDocs(collection(db, 'ba_projects'));
-    const data = querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data(),
-      images: typeof (doc.data() as any).images === 'string' ? JSON.parse((doc.data() as any).images) : ((doc.data() as any).images || []),
-      tags: typeof (doc.data() as any).tags === 'string' ? JSON.parse((doc.data() as any).tags) : ((doc.data() as any).tags || [])
-    }));
-
-    return data.sort((a: any, b: any) => {
-      const timeA = a.createdAt?.seconds || 0;
-      const timeB = b.createdAt?.seconds || 0;
-      return timeB - timeA;
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export async function fetchLifeHobbies() {
-  const path = 'life_hobbies';
-  try {
-    const querySnapshot = await getDocs(collection(db, 'life_hobbies'));
-    const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    return data.sort((a: any, b: any) => {
-      const timeA = a.createdAt?.seconds || 0;
-      const timeB = b.createdAt?.seconds || 0;
-      return timeB - timeA;
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export async function fetchCalendar() {
-  const path = 'calendar';
-  try {
-    const q = query(collection(db, 'calendar'), orderBy('date_str', 'asc'));
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
-    return [];
+    return getCache(cacheKey, true) || {};
   }
 }
 
 export async function saveProfile(data: any) {
-  const path = 'profile/main';
+  const updatedAt = new Date().toISOString();
+  const res = await request('/api/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitizeData(data), updatedAt })
+  });
+  clearCache('profile');
+  return res;
+}
+
+export async function fetchAssets(type?: string) {
+  const cacheKey = `assets_${type || 'all'}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    const docRef = doc(db, 'profile', 'main');
-    await setDoc(docRef, { ...sanitizeData(data), updatedAt: serverTimestamp() }, { merge: true });
-    return { success: true };
+    const apiPath = `/api/assets${type ? `?type=${encodeURIComponent(type)}` : ''}`;
+    const data = await request(apiPath);
+    const sorted = data.sort((a: any, b: any) => {
+      const timeA = getTimestampInSeconds(a.createdAt || a.updatedAt);
+      const timeB = getTimestampInSeconds(b.createdAt || b.updatedAt);
+      return timeB - timeA;
+    });
+    setCache(cacheKey, sorted);
+    return sorted;
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
+    return getCache(cacheKey, true) || [];
   }
 }
 
 export async function saveAsset(data: any) {
-  const path = 'assets';
-  try {
-    const timestamp = serverTimestamp();
-    const sanitized = sanitizeData(data);
-    if (sanitized.id) {
-      const { id, ...rest } = sanitized;
-      const docRef = doc(db, 'assets', id);
-      await updateDoc(docRef, { ...rest, updatedAt: timestamp });
-    } else {
-      await addDoc(collection(db, 'assets'), { ...sanitized, createdAt: timestamp, updatedAt: timestamp });
-    }
-    return { success: true };
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  const updatedAt = new Date().toISOString();
+  const sanitized = sanitizeData(data);
+  const path = sanitized.id ? `/api/assets/${sanitized.id}` : '/api/assets';
+  const method = sanitized.id ? 'PUT' : 'POST';
+  
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitized, updatedAt })
+  });
+  clearCache('assets');
+  return res;
 }
 
 export async function deleteAsset(id: string) {
-  const path = `assets/${id}`;
-  try {
-    await deleteDoc(doc(db, 'assets', id));
-    return { success: true };
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
-  }
+  const res = await request(`/api/assets/${id}`, { method: 'DELETE' });
+  clearCache('assets');
+  return res;
 }
 
-export async function saveCalendar(data: any) {
-  const path = 'calendar';
+export async function fetchServices(mode?: 'model' | 'ba') {
+  const cacheKey = `services_${mode || 'all'}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    const sanitized = sanitizeData(data);
-    const q = query(collection(db, 'calendar'), where('date_str', '==', sanitized.date_str));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      await updateDoc(doc(db, 'calendar', snap.docs[0].id), { status: sanitized.status });
-    } else {
-      await addDoc(collection(db, 'calendar'), sanitized);
-    }
-    return { success: true };
+    const apiPath = `/api/services${mode ? `?mode=${encodeURIComponent(mode)}` : ''}`;
+    const data = await request(apiPath);
+    setCache(cacheKey, data);
+    return data;
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
+    return getCache(cacheKey, true) || [];
   }
 }
 
 export async function saveService(data: any) {
-  const path = 'services';
-  try {
-    const timestamp = serverTimestamp();
-    const sanitized = sanitizeData(data);
-    if (sanitized.id) {
-      const { id, ...rest } = sanitized;
-      await updateDoc(doc(db, 'services', id), { ...rest, updatedAt: timestamp });
-    } else {
-      await addDoc(collection(db, 'services'), { ...sanitized, createdAt: timestamp, updatedAt: timestamp });
-    }
-    return { success: true };
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  const updatedAt = new Date().toISOString();
+  const sanitized = sanitizeData(data);
+  const path = sanitized.id ? `/api/services/${sanitized.id}` : '/api/services';
+  const method = sanitized.id ? 'PUT' : 'POST';
+  
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitized, updatedAt })
+  });
+  clearCache('services');
+  return res;
 }
 
 export async function deleteService(id: string) {
-  const path = `services/${id}`;
+  const res = await request(`/api/services/${id}`, { method: 'DELETE' });
+  clearCache('services');
+  return res;
+}
+
+export async function fetchMilestones(mode?: 'model' | 'ba') {
+  const cacheKey = `milestones_${mode || 'all'}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    await deleteDoc(doc(db, 'services', id));
-    return { success: true };
+    const apiPath = `/api/milestones${mode ? `?mode=${encodeURIComponent(mode)}` : ''}`;
+    const data = await request(apiPath);
+    const sorted = data.sort((a: any, b: any) => (b.year || 0) - (a.year || 0));
+    setCache(cacheKey, sorted);
+    return sorted;
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+    return getCache(cacheKey, true) || [];
   }
 }
 
 export async function saveMilestone(data: any) {
-  const path = 'milestones';
-  try {
-    const timestamp = serverTimestamp();
-    const sanitized = sanitizeData(data);
-    if (sanitized.id) {
-      const { id, ...rest } = sanitized;
-      await updateDoc(doc(db, 'milestones', id), { ...rest, updatedAt: timestamp });
-    } else {
-      await addDoc(collection(db, 'milestones'), { ...sanitized, createdAt: timestamp, updatedAt: timestamp });
-    }
-    return { success: true };
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  const updatedAt = new Date().toISOString();
+  const sanitized = sanitizeData(data);
+  const path = sanitized.id ? `/api/milestones/${sanitized.id}` : '/api/milestones';
+  const method = sanitized.id ? 'PUT' : 'POST';
+
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitized, updatedAt })
+  });
+  clearCache('milestones');
+  return res;
 }
 
 export async function deleteMilestone(id: string) {
-  const path = `milestones/${id}`;
+  const res = await request(`/api/milestones/${id}`, { method: 'DELETE' });
+  clearCache('milestones');
+  return res;
+}
+
+export async function fetchBAProjects() {
+  const cacheKey = 'ba_projects';
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    await deleteDoc(doc(db, 'milestones', id));
-    return { success: true };
+    const data = await request('/api/ba-projects');
+    const sorted = data.sort((a: any, b: any) => {
+      const timeA = getTimestampInSeconds(a.createdAt || a.updatedAt);
+      const timeB = getTimestampInSeconds(b.createdAt || b.updatedAt);
+      return timeB - timeA;
+    });
+    setCache(cacheKey, sorted);
+    return sorted;
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+    return getCache(cacheKey, true) || [];
   }
 }
 
 export async function saveBAProject(data: any) {
-  const path = 'ba_projects';
-  try {
-    const timestamp = serverTimestamp();
-    const sanitized = sanitizeData(data);
-    if (sanitized.id) {
-      const { id, ...rest } = sanitized;
-      await updateDoc(doc(db, 'ba_projects', id), { ...rest, updatedAt: timestamp });
-    } else {
-      await addDoc(collection(db, 'ba_projects'), { ...sanitized, createdAt: timestamp, updatedAt: timestamp });
-    }
-    return { success: true };
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  const updatedAt = new Date().toISOString();
+  const sanitized = sanitizeData(data);
+  const path = sanitized.id ? `/api/ba-projects/${sanitized.id}` : '/api/ba-projects';
+  const method = sanitized.id ? 'PUT' : 'POST';
+
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitized, updatedAt })
+  });
+  clearCache('ba_projects');
+  return res;
 }
 
 export async function deleteBAProject(id: string) {
-  const path = `ba_projects/${id}`;
+  const res = await request(`/api/ba-projects/${id}`, { method: 'DELETE' });
+  clearCache('ba_projects');
+  return res;
+}
+
+export async function fetchLifeHobbies() {
+  const cacheKey = 'life_hobbies';
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    await deleteDoc(doc(db, 'ba_projects', id));
-    return { success: true };
+    const data = await request('/api/life-hobbies');
+    setCache(cacheKey, data);
+    return data;
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+    return getCache(cacheKey, true) || [];
   }
 }
 
 export async function saveLifeHobby(data: any) {
-  const path = 'life_hobbies';
-  try {
-    const timestamp = serverTimestamp();
-    const sanitized = sanitizeData(data);
-    if (sanitized.id) {
-      const { id, ...rest } = sanitized;
-      await updateDoc(doc(db, 'life_hobbies', id), { ...rest, updatedAt: timestamp });
-    } else {
-      await addDoc(collection(db, 'life_hobbies'), { ...sanitized, createdAt: timestamp, updatedAt: timestamp });
-    }
-    return { success: true };
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  const updatedAt = new Date().toISOString();
+  const sanitized = sanitizeData(data);
+  const path = sanitized.id ? `/api/life-hobbies/${sanitized.id}` : '/api/life-hobbies';
+  const method = sanitized.id ? 'PUT' : 'POST';
+
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitized, updatedAt })
+  });
+  clearCache('life_hobbies');
+  return res;
 }
 
 export async function deleteLifeHobby(id: string) {
-  const path = `life_hobbies/${id}`;
+  const res = await request(`/api/life-hobbies/${id}`, { method: 'DELETE' });
+  clearCache('life_hobbies');
+  return res;
+}
+
+export async function fetchCalendar() {
+  const cacheKey = 'calendar';
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    await deleteDoc(doc(db, 'life_hobbies', id));
-    return { success: true };
+    const data = await request('/api/calendar');
+    const sorted = data.sort((a: any, b: any) => (a.date_str || '').localeCompare(b.date_str || ''));
+    setCache(cacheKey, sorted);
+    return sorted;
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+    return getCache(cacheKey, true) || [];
   }
+}
+
+export async function saveCalendar(data: any) {
+  const updatedAt = new Date().toISOString();
+  const sanitized = sanitizeData(data);
+  const path = sanitized.id ? `/api/calendar/${sanitized.id}` : '/api/calendar';
+  const method = sanitized.id ? 'PUT' : 'POST';
+
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sanitized, updatedAt })
+  });
+  clearCache('calendar');
+  return res;
+}
+
+// Dummy sync function to prevent breakage if called from UI
+export async function syncMirrorToCloud() {
+  console.log('Firebase is disabled. No sync needed.');
+  return { success: true };
 }
